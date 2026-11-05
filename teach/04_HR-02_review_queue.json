@@ -1,0 +1,213 @@
+{
+  "name": "HR-02 Human Review Queue and Decisions",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "review-queue",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e800a77a-97b8-592b-850e-32bb0b8924d5",
+      "name": "GET /review-queue",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "cf9886b2-037e-51ba-ad4b-b6ea7958d8ed"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst read = p => fs.existsSync(p) ? fs.readFileSync(p,'utf8').split('\\n').filter(Boolean).map(l => JSON.parse(l)) : [];\nconst log = read('/files/logs/triage_log.jsonl');\nconst dec = read('/files/logs/review_decisions.jsonl');\nconst decided = new Set(dec.map(d => d.item_id));\nconst pending = log.filter(r => r.status !== 'AUTO_ROUTED' && !decided.has(r.item_id));\nconst recent = log.slice(-15).reverse();\nconst e = s => String(s ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));\nconst row = r => `<tr><td>${e(r.item_id)}</td><td>${e(r.status)}</td><td>${e(r.proposed_team)}</td><td>${r.complaint_flag?'YES':''}</td><td>${Number(r.confidence).toFixed(2)}</td><td>${e(r.subject)}</td><td>${e(r.reason)}</td><td>${e(r.provider_used)}</td><td>${e(r.processed_at)}</td></tr>`;\nconst head = '<tr><th>Item</th><th>Status</th><th>Proposed team</th><th>Complaint</th><th>Conf.</th><th>Subject</th><th>AI reason</th><th>Model</th><th>Processed</th></tr>';\nconst html = `<!doctype html><html><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"20\"><title>Review queue</title>\n<style>body{font-family:Arial;margin:20px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:4px;font-size:13px}th{background:#1f3864;color:#fff}</style></head><body>\n<h2>Harbor Ridge – Review queue (FICTIONAL TRAINING DATA)</h2>\n<p>${pending.length} item(s) waiting for a person. Record a decision in the <b>Review decision</b> form.</p>\n<table>${head}${pending.map(row).join('')}</table>\n<h3>Last 15 items processed</h3><table>${head}${recent.map(row).join('')}</table>\n<h3>Last 10 reviewer decisions</h3><table><tr><th>Item</th><th>Decision</th><th>Final team</th><th>Complaint</th><th>Reviewer</th><th>Reason</th><th>Time</th></tr>\n${dec.slice(-10).reverse().map(d=>`<tr><td>${e(d.item_id)}</td><td>${e(d.decision)}</td><td>${e(d.final_team)}</td><td>${e(d.final_complaint)}</td><td>${e(d.reviewer)}</td><td>${e(d.reason)}</td><td>${e(d.decided_at)}</td></tr>`).join('')}</table>\n</body></html>`;\nreturn [{ json: { html } }];\n"
+      },
+      "id": "3faed474-eb1f-5757-aff4-4e5524ac004c",
+      "name": "Build queue page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "63b64bcb-b38c-55c4-b2ab-9043b5f32939",
+      "name": "Return page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "formTitle": "Harbor Ridge – Review decision",
+        "formDescription": "Accept, correct or reject the AI routing proposal. Every decision is recorded with your role and time.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Item ID",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Decision",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Accept"
+                  },
+                  {
+                    "option": "Correct"
+                  },
+                  {
+                    "option": "Reject"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Corrected team (only if Correct)",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Claims"
+                  },
+                  {
+                    "option": "Billing and Payments"
+                  },
+                  {
+                    "option": "Policy Service"
+                  },
+                  {
+                    "option": "New Business and Underwriting"
+                  },
+                  {
+                    "option": "Agent Services"
+                  },
+                  {
+                    "option": "Complaints Unit"
+                  },
+                  {
+                    "option": "General Inquiries"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Is this a complaint?",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Yes"
+                  },
+                  {
+                    "option": "No"
+                  }
+                ]
+              },
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Reason",
+              "fieldType": "textarea"
+            },
+            {
+              "fieldLabel": "Reviewer role/initials",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "6e51ff23-1bad-54f4-a670-1b94990bea6d",
+      "name": "Review decision form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        240
+      ],
+      "webhookId": "6f68e732-8331-5c86-9168-04cee57bae2a"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst j = $input.first().json;\nconst id = (j['Item ID'] || '').trim();\nconst decision = j['Decision'];\nconst corrected = j['Corrected team (only if Correct)'] || '';\nconst reason = (j['Reason'] || '').trim();\nconst reviewer = (j['Reviewer role/initials'] || '').trim();\nconst lines = fs.existsSync('/files/logs/triage_log.jsonl') ? fs.readFileSync('/files/logs/triage_log.jsonl','utf8').split('\\n').filter(Boolean).map(l=>JSON.parse(l)) : [];\nconst item = lines.reverse().find(r => r.item_id === id);\nif (!item) throw new Error('Item ID not found in audit log: ' + id);\nif (decision === 'Correct' && !corrected) throw new Error('Choose the corrected team.');\nif (decision !== 'Accept' && !reason) throw new Error('A reason is required to correct or reject.');\nconst final_team = decision === 'Accept' ? item.proposed_team : decision === 'Correct' ? corrected : 'Returned to manual sorting';\nconst rec = { item_id: id, decision, ai_proposed_team: item.proposed_team, final_team,\n  final_complaint: j['Is this a complaint?'] || (item.complaint_flag ? 'Yes' : 'No'),\n  reason, reviewer, decided_at: $now.toISO(), ai_status: item.status, ai_confidence: item.confidence };\nfs.mkdirSync('/files/logs', { recursive: true });\nfs.appendFileSync('/files/logs/review_decisions.jsonl', JSON.stringify(rec) + '\\n');\nreturn [{ json: rec }];\n"
+      },
+      "id": "df426fb6-7b5c-586c-92aa-42f94d2e1484",
+      "name": "Validate and record decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        240
+      ]
+    }
+  ],
+  "connections": {
+    "GET /review-queue": {
+      "main": [
+        [
+          {
+            "node": "Build queue page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build queue page": {
+      "main": [
+        [
+          {
+            "node": "Return page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review decision form": {
+      "main": [
+        [
+          {
+            "node": "Validate and record decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Chicago",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

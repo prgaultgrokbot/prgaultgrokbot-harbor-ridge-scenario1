@@ -1,0 +1,630 @@
+{
+  "name": "HR-01 Email Triage (Gemini primary, Ollama backup)",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Harbor Ridge – Email Triage (FICTIONAL TRAINING DATA ONLY)",
+        "formDescription": "Paste one fictional customer service email. Do not enter real names, policy numbers or addresses.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Sender name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Subject",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Email body",
+              "fieldType": "textarea",
+              "requiredField": true
+            }
+          ]
+        },
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "1527abc8-0fb4-5810-a001-2fdbc766f259",
+      "name": "Email intake form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "0ff96437-e049-5d4f-b2c4-77d3d8d222ee"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "d65a8d59-0cca-53b0-9e83-4210f5364e77",
+      "name": "From batch runner",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ===== CONFIG: edit here only =====\nconst CONFIG = {\n  provider: 'gemini',            // 'gemini' | 'ollama'  (switch to backup in one edit)\n  aiEnabled: true,               // false = every item goes to the manual review queue\n  geminiModel: 'gemini-3.1-flash-lite',\n  ollamaModel: 'llama3.2',\n  // Docker build: http://host.docker.internal:11434 ; npm/native install on the same host: http://127.0.0.1:11434 (not localhost, which can resolve to IPv6 ::1)\n  ollamaUrl: 'http://host.docker.internal:11434',\n  confidenceThreshold: 0.75,\n  // Backup threshold is stricter: llama3.2 confidence is not calibrated (about 0.8 for almost everything).\n  ollamaConfidenceThreshold: 0.85,\n  // Routing teams, one line each. Descriptions are required for good routing with llama3.2.\n  // To add a team (curveball: Catastrophe claim), copy one line and edit the name and description.\n  teams: [\n    { name: 'Claims', description: 'reporting a new loss or damage, or asking about an existing claim, adjuster or claim payment' },\n    { name: 'Billing and Payments', description: 'premium payments, autopay, due dates, declined cards, refunds, late fees, payment plans, double charges' },\n    { name: 'Policy Service', description: 'changes to an existing policy: add or remove a driver or vehicle, address change, deductible change, ID cards, paperless' },\n    { name: 'New Business and Underwriting', description: 'quotes and applications for new policies or new customers' },\n    { name: 'Agent Services', description: 'messages from insurance agencies or agents: portal access, commissions, binding authority' },\n    { name: 'Complaints Unit', description: 'dissatisfaction, repeated unanswered requests, threats to cancel, mentions of a regulator, attorney or Department of Insurance' },\n    { name: 'General Inquiries', description: 'too vague to tell what is needed, or general questions such as office hours' }\n  ]\n};\n\nconst out = [];\nfor (const it of $input.all()) {\n  const j = it.json;\n  const id = j.item_id || j['Item ID'] || ('HR-' + $now.toFormat('yyyyMMdd-HHmmss') + '-' + Math.floor(Math.random()*1000).toString().padStart(3,'0'));\n  const subject = (j.subject || j['Subject'] || '').toString().trim();\n  const body = (j.body || j['Email body'] || '').toString().trim();\n  const sender = (j.sender || j['Sender name'] || 'Unknown').toString().trim();\n  const emailText = `From: ${sender}\\nSubject: ${subject}\\n\\n${body}`.slice(0, 6000);\n  const teamList = CONFIG.teams.map(t => '- ' + t.name + ': ' + t.description).join('\\n');\n  const systemPrompt =\n`You are an internal email triage assistant for Harbor Ridge Mutual Insurance customer service.\nYou only PROPOSE a routing. A person reviews uncertain items. You never decide claims, coverage, payment or denial questions and never draft replies to customers.\nChoose exactly one team from this list:\n${teamList}\nRules:\n1. complaint_flag = true if the message expresses dissatisfaction, repeats an unanswered request, threatens to cancel or complain, or mentions a regulator, the Department of Insurance, an attorney or the media. A complaint is routed to \"Complaints Unit\" even if it also asks about billing or claims; put the other topic in secondary_team.\n2. urgency: \"high\" for complaints, regulator mentions, injury, active loss or cancellation threats; \"medium\" for time-bound requests; otherwise \"low\".\n3. confidence is your probability (0 to 1) that the team is correct. Use below 0.6 when the message is ambiguous, mixes topics or is not in English.\n4. reason: one sentence, no customer personal data.\n5. language: ISO code of the email language.\nReturn JSON only.`;\n  out.push({ json: {\n    item_id: id, received_at: $now.toISO(), sender, subject, body,\n    expected_team: j.expected_team || '', expected_complaint: j.expected_complaint || '',\n    source: j.expected_team !== undefined ? 'batch_test' : 'form',\n    provider: CONFIG.provider, ai_enabled: CONFIG.aiEnabled,\n    model: CONFIG.provider === 'gemini' ? CONFIG.geminiModel : CONFIG.ollamaModel,\n    gemini_model: CONFIG.geminiModel, ollama_model: CONFIG.ollamaModel, ollama_url: CONFIG.ollamaUrl,\n    threshold: CONFIG.provider === 'gemini' ? CONFIG.confidenceThreshold : CONFIG.ollamaConfidenceThreshold,\n    gemini_threshold: CONFIG.confidenceThreshold, ollama_threshold: CONFIG.ollamaConfidenceThreshold,\n    teams: CONFIG.teams.map(t => t.name),\n    system_prompt: systemPrompt, email_text: emailText\n  }});\n}\nreturn out;\n"
+      },
+      "id": "04949348-1a1d-5cd7-a0b9-c2f1b28a2096",
+      "name": "Normalize input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8cadc2c3-b6f6-5616-aa34-6653e5313bb5",
+              "leftValue": "={{ $json.ai_enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ce6e5227-1344-50dd-9584-7a92095c4b6c",
+      "name": "AI enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5c54be80-0f7b-5cf8-8b09-9178ddea8103",
+              "leftValue": "={{ $json.provider }}",
+              "rightValue": "gemini",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e743ffa3-1ec5-501f-a839-7195aad24906",
+      "name": "Provider is Gemini?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        680,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $json.gemini_model }}:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text: $json.system_prompt }] },\n  contents: [{ role: 'user', parts: [{ text: 'Triage this email:\\n\\n' + $json.email_text }] }],\n  generationConfig: {\n    temperature: 0,\n    responseMimeType: 'application/json',\n    responseSchema: {\n      type: 'OBJECT',\n      properties: {\n        team: { type: 'STRING', enum: $json.teams },\n        secondary_team: { type: 'STRING' },\n        intent: { type: 'STRING' },\n        urgency: { type: 'STRING', enum: ['low','medium','high'] },\n        complaint_flag: { type: 'BOOLEAN' },\n        confidence: { type: 'NUMBER' },\n        reason: { type: 'STRING' },\n        language: { type: 'STRING' }\n      },\n      required: ['team','intent','urgency','complaint_flag','confidence','reason','language']\n    }\n  }\n}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "1bfd0cba-d811-5280-92ad-640429dfef4b",
+      "name": "Gemini – classify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        -100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "Gemini API key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Normalize input').item.json.ollama_url }}/api/chat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: $('Normalize input').item.json.ollama_model,\n  stream: false,\n  options: { temperature: 0, num_ctx: 4096 },\n  format: {\n    type: 'object',\n    properties: {\n      team: { type: 'string', enum: $('Normalize input').item.json.teams },\n      secondary_team: { type: 'string' },\n      intent: { type: 'string' },\n      urgency: { type: 'string', enum: ['low','medium','high'] },\n      complaint_flag: { type: 'boolean' },\n      confidence: { type: 'number' },\n      reason: { type: 'string' },\n      language: { type: 'string' }\n    },\n    required: ['team','intent','urgency','complaint_flag','confidence','reason','language']\n  },\n  messages: [\n    { role: 'system', content: $('Normalize input').item.json.system_prompt },\n    { role: 'user', content: 'Triage this email:\\n\\n' + $('Normalize input').item.json.email_text }\n  ]\n}) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "bdf0a7f1-0cb4-5bdb-b1cf-edfe1c57547d",
+      "name": "Ollama – classify (backup)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        80
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and validate model output (Gemini or Ollama), apply complaint safety net, set status.\nconst COMPLAINT_RX = /(third time|second time|still (have not|haven't)|no one (has )?(called|responded|replied)|unacceptable|disappointed|frustrat|complain|department of insurance|insurance commissioner|regulator|attorney|lawyer|better business bureau|\\bBBB\\b|cancel my polic|switch(ing)? (insurers|companies)|ridiculous|terrible service|queja|reclamo)/i;\nconst out = [];\nconst src = $('Normalize input').all();\n$input.all().forEach((it, i) => {\n  const base = src[i] ? src[i].json : $('Normalize input').first().json;\n  const r = it.json;\n  let raw = '', providerUsed = base.provider, parsed = null, parseError = '';\n  if (r.candidates) { providerUsed = 'gemini'; raw = r.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || ''; }\n  else if (r.message) { providerUsed = 'ollama'; raw = r.message.content || ''; }\n  else { raw = JSON.stringify(r); }\n  try {\n    const cleaned = raw.replace(/^```(json)?/i, '').replace(/```$/, '').trim();\n    parsed = JSON.parse(cleaned);\n  } catch (e) { parseError = 'JSON parse failed: ' + e.message; }\n  const teams = base.teams;\n  let team = parsed?.team, conf = Number(parsed?.confidence);\n  const problems = [];\n  if (parsed) {\n    if (!teams.includes(team)) problems.push('team not in list: ' + team);\n    if (isNaN(conf) || conf < 0 || conf > 1) { problems.push('confidence invalid'); conf = 0; }\n  }\n  const ruleComplaint = COMPLAINT_RX.test(base.subject + ' ' + base.body);\n  const complaint = Boolean(parsed?.complaint_flag) || ruleComplaint;\n  if (complaint) team = 'Complaints Unit';\n  let status;\n  if (!parsed || problems.length) status = 'NEEDS_REVIEW';\n  else if (complaint) status = 'COMPLAINT';\n  else if (conf < (providerUsed === 'gemini' ? base.gemini_threshold : base.ollama_threshold)) status = 'NEEDS_REVIEW';\n  else status = 'AUTO_ROUTED';\n  out.push({ json: {\n    item_id: base.item_id, received_at: base.received_at, source: base.source,\n    sender: base.sender, subject: base.subject, body: base.body,\n    provider_used: providerUsed, model: providerUsed === 'gemini' ? base.gemini_model : base.ollama_model,\n    ai_team: parsed?.team || '', secondary_team: (base.teams.includes(parsed?.secondary_team) && parsed?.secondary_team !== team) ? parsed.secondary_team : '',\n    proposed_team: team || 'General Inquiries', intent: parsed?.intent || '',\n    urgency: complaint ? 'high' : (parsed?.urgency || 'medium'),\n    ai_complaint_flag: Boolean(parsed?.complaint_flag), rule_complaint_flag: ruleComplaint,\n    complaint_flag: complaint, confidence: conf || 0, reason: parsed?.reason || '',\n    language: parsed?.language || '', status,\n    validation_notes: [parseError, ...problems].filter(Boolean).join('; '),\n    raw_model_output: raw.slice(0, 2000),\n    expected_team: base.expected_team, expected_complaint: base.expected_complaint,\n    processed_at: $now.toISO()\n  }});\n});\nreturn out;\n"
+      },
+      "id": "266bc72a-2930-53c9-bf27-ba0fe59b8afc",
+      "name": "Parse and validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI disabled or AI service unavailable (both Gemini and Ollama failed): item is NEVER dropped.\nconst src = $('Normalize input').all();\nreturn src.map(s => ({ json: {\n  item_id: s.json.item_id, received_at: s.json.received_at, source: s.json.source,\n  sender: s.json.sender, subject: s.json.subject, body: s.json.body,\n  provider_used: 'none', model: '', ai_team: '', secondary_team: '', proposed_team: '',\n  intent: '', urgency: 'medium', ai_complaint_flag: false, rule_complaint_flag: false,\n  complaint_flag: false, confidence: 0, reason: '',\n  language: '', status: s.json.ai_enabled ? 'AI_UNAVAILABLE_MANUAL' : 'AI_OFF_MANUAL',\n  validation_notes: s.json.ai_enabled ? 'Gemini and Ollama both failed; see execution log' : 'AI step switched off in CONFIG',\n  raw_model_output: '', expected_team: s.json.expected_team, expected_complaint: s.json.expected_complaint,\n  processed_at: $now.toISO()\n}}));\n"
+      },
+      "id": "799f03fd-609f-5f4e-b1b0-fd2288a51116",
+      "name": "Manual queue item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cd7dc619-878a-5e03-a7ad-41582855d9b5",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "COMPLAINT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Complaints Unit"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "90a7a34b-1327-5ce2-98e6-ef34779d03df",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "NEEDS_REVIEW",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Review queue"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "360a005a-9118-54db-bd62-7483acbfa4ee",
+                    "leftValue": "={{ $json.status }}",
+                    "rightValue": "AUTO_ROUTED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Team queue"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": 1
+        }
+      },
+      "id": "748095ac-3a18-5153-a22f-41d98cda2733",
+      "name": "Route by status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1640,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "53438410-b758-59df-af9f-57f63ec8006a",
+              "name": "destination",
+              "value": "Complaints Unit – same-business-day log",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f3ddb28a-341f-5761-a0a4-1c4a66c99eca",
+      "name": "To Complaints Unit (same day)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1880,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c6517540-2177-56ea-b417-1b91f641a651",
+              "name": "destination",
+              "value": "Human review queue",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e2b1c259-8dc2-5062-965d-7b8add9969da",
+      "name": "To human review queue",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1880,
+        -60
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "10e82857-c8ed-5b44-8653-2dd90f30d5de",
+              "name": "destination",
+              "value": "={{ 'Team queue: ' + $json.proposed_team }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "1044a69f-e8db-5a1f-8fff-0830ac138055",
+      "name": "To team queue",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1880,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9e7729c8-9543-58dd-843c-6d989166fa39",
+              "name": "destination",
+              "value": "Manual queue (no AI)",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f6afd57e-64e5-5324-94ec-d57c2fd1d4a5",
+      "name": "To manual queue",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Append every item to the audit log (JSON Lines) and a CSV copy. Requires NODE_FUNCTION_ALLOW_BUILTIN=fs,path\nconst fs = require('fs');\nconst dir = '/files/logs';\nfs.mkdirSync(dir, { recursive: true });\nconst cols = ['item_id','received_at','processed_at','source','provider_used','model','status','destination','proposed_team','secondary_team','intent','urgency','complaint_flag','ai_complaint_flag','rule_complaint_flag','confidence','reason','language','validation_notes','sender','subject','expected_team','expected_complaint'];\nconst csvPath = dir + '/triage_log.csv';\nif (!fs.existsSync(csvPath)) fs.appendFileSync(csvPath, cols.join(',') + '\\n');\nconst esc = v => '\"' + String(v ?? '').replace(/\"/g, '\"\"').replace(/\\r?\\n/g, ' ') + '\"';\nfor (const it of $input.all()) {\n  fs.appendFileSync(dir + '/triage_log.jsonl', JSON.stringify(it.json) + '\\n');\n  fs.appendFileSync(csvPath, cols.map(c => esc(it.json[c])).join(',') + '\\n');\n}\nreturn $input.all();\n"
+      },
+      "id": "1e228ea0-9abd-5fa7-9cf2-00874f6606b0",
+      "name": "Write audit log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2120,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Email intake form": {
+      "main": [
+        [
+          {
+            "node": "Normalize input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "From batch runner": {
+      "main": [
+        [
+          {
+            "node": "Normalize input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize input": {
+      "main": [
+        [
+          {
+            "node": "AI enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI enabled?": {
+      "main": [
+        [
+          {
+            "node": "Provider is Gemini?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual queue item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provider is Gemini?": {
+      "main": [
+        [
+          {
+            "node": "Gemini – classify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama – classify (backup)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini – classify": {
+      "main": [
+        [
+          {
+            "node": "Parse and validate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama – classify (backup)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama – classify (backup)": {
+      "main": [
+        [
+          {
+            "node": "Parse and validate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual queue item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse and validate": {
+      "main": [
+        [
+          {
+            "node": "Route by status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by status": {
+      "main": [
+        [
+          {
+            "node": "To Complaints Unit (same day)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "To human review queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "To team queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual queue item": {
+      "main": [
+        [
+          {
+            "node": "To manual queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To Complaints Unit (same day)": {
+      "main": [
+        [
+          {
+            "node": "Write audit log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To human review queue": {
+      "main": [
+        [
+          {
+            "node": "Write audit log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To team queue": {
+      "main": [
+        [
+          {
+            "node": "Write audit log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To manual queue": {
+      "main": [
+        [
+          {
+            "node": "Write audit log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Chicago",
+    "saveManualExecutions": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "errorWorkflow": "REPLACE_WITH_WF04_ID"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

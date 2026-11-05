@@ -1,0 +1,6 @@
+Run test set	n8n-nodes-base.manualTrigger
+Load labelled test set	n8n-nodes-base.code
+One at a time	n8n-nodes-base.splitInBatches
+Run HR-01 triage	n8n-nodes-base.executeWorkflow
+Throttle (stay under free-tier RPM)	n8n-nodes-base.wait
+Score results	n8n-nodes-base.code

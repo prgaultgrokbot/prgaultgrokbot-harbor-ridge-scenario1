@@ -1,0 +1,14 @@
+VERIFIED: standalone Harbor Ridge cloud package
+- python3 verify.py: PASS
+- HTTP 200 on /, assets, four panels, teaching/source routes and ZIP
+- 32 bundled fictional samples and 38 initial audit records
+- original live_scoreboard function copied verbatim
+- no-key custom AI submission: graceful notice, no fake prediction/log entry
+- recorded sample replay: updates audit/dashboard without an API call
+- pending review and Accept decision: updates queue, preserves predictions
+- labelled batch replay: appends 32 recorded predictions
+- cross-origin POST, upload-size limit and path-traversal checks: PASS
+- optional Gemini parser: tested with stubbed network response ONLY
+- existing original demo on 8787: HTTP 200; not restarted or modified
+- Python standard library only; no pip or n8n required
+- Render Free deployment artifacts ready; NOT deployed, no public URL issued

@@ -1,0 +1,110 @@
+[
+  {
+    "parameters": {
+      "formTitle": "Harbor Ridge \u2013 Review decision",
+      "formDescription": "Accept when the AI assignment is accurate. Update the team only when the assignment was inaccurate, or Reject to return to manual sorting. Every decision is audited.",
+      "formFields": {
+        "values": [
+          {
+            "fieldLabel": "Item ID",
+            "requiredField": true
+          },
+          {
+            "fieldLabel": "Decision",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Accept (assignment accurate)"
+                },
+                {
+                  "option": "Update team (assignment inaccurate)"
+                },
+                {
+                  "option": "Reject"
+                }
+              ]
+            },
+            "requiredField": true
+          },
+          {
+            "fieldLabel": "Updated team (only when assignment was inaccurate)",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Claims"
+                },
+                {
+                  "option": "Billing and Payments"
+                },
+                {
+                  "option": "Policy Service"
+                },
+                {
+                  "option": "New Business and Underwriting"
+                },
+                {
+                  "option": "Agent Services"
+                },
+                {
+                  "option": "Complaints Unit"
+                },
+                {
+                  "option": "General Inquiries"
+                }
+              ]
+            }
+          },
+          {
+            "fieldLabel": "Is this a complaint?",
+            "fieldType": "dropdown",
+            "fieldOptions": {
+              "values": [
+                {
+                  "option": "Yes"
+                },
+                {
+                  "option": "No"
+                }
+              ]
+            },
+            "requiredField": true
+          },
+          {
+            "fieldLabel": "Reason",
+            "fieldType": "textarea"
+          },
+          {
+            "fieldLabel": "Reviewer role/initials",
+            "requiredField": true
+          }
+        ]
+      },
+      "responseMode": "lastNode",
+      "options": {}
+    },
+    "id": "6e51ff23-1bad-54f4-a670-1b94990bea6d",
+    "name": "Review decision form",
+    "type": "n8n-nodes-base.formTrigger",
+    "typeVersion": 2.2,
+    "position": [
+      0,
+      240
+    ],
+    "webhookId": "6f68e732-8331-5c86-9168-04cee57bae2a"
+  },
+  {
+    "parameters": {
+      "jsCode": "const fs = require('fs');\nconst j = $input.first().json;\nconst id = (j['Item ID'] || '').trim();\nconst decision = {'Accept (assignment accurate)': 'Accept', 'Update team (assignment inaccurate)': 'Update', 'Reject': 'Reject'}[j['Decision']];\nif (!decision) throw new Error('Choose a valid decision.');\nconst corrected = j['Updated team (only when assignment was inaccurate)'] || '';\nconst reason = (j['Reason'] || '').trim();\nconst reviewer = (j['Reviewer role/initials'] || '').trim();\nconst lines = fs.existsSync('/files/logs/triage_log.jsonl') ? fs.readFileSync('/files/logs/triage_log.jsonl','utf8').split('\\n').filter(Boolean).map(l=>JSON.parse(l)) : [];\nconst item = lines.reverse().find(r => r.item_id === id);\nif (!item) throw new Error('Item ID not found in audit log: ' + id);\nif (decision === 'Update' && !['Claims', 'Billing and Payments', 'Policy Service', 'New Business and Underwriting', 'Agent Services', 'Complaints Unit', 'General Inquiries'].includes(corrected)) throw new Error('Choose the updated team for the inaccurate assignment.');\nif (decision !== 'Accept' && !reason) throw new Error('A reason is required to update the team or reject.');\nconst final_team = decision === 'Accept' ? item.proposed_team : decision === 'Update' ? corrected : 'Returned to manual sorting';\nconst rec = { item_id: id, decision, ai_proposed_team: item.proposed_team, final_team,\n  final_complaint: j['Is this a complaint?'] || (item.complaint_flag ? 'Yes' : 'No'),\n  reason, reviewer, decided_at: $now.toISO(), ai_status: item.status, ai_confidence: item.confidence };\nfs.mkdirSync('/files/logs', { recursive: true });\nfs.appendFileSync('/files/logs/review_decisions.jsonl', JSON.stringify(rec) + '\\n');\nreturn [{ json: rec }];\n"
+    },
+    "id": "df426fb6-7b5c-586c-92aa-42f94d2e1484",
+    "name": "Validate and record decision",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+      240,
+      240
+    ]
+  }
+]

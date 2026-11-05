@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: harbor-ridge-scenario1
+    runtime: python
+    plan: free
+    buildCommand: 'echo "Standard-library app: no pip dependencies"'
+    startCommand: python3 server.py
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
+      - key: PYTHONUNBUFFERED
+        value: "1"

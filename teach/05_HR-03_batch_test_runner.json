@@ -1,0 +1,169 @@
+{
+  "name": "HR-03 Batch Test Runner and Scoring",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "3c02b477-65f1-525a-9fff-2fca653e0945",
+      "name": "Run test set",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reads the labelled fictional test set. Columns: item_id,sender,subject,body,expected_team,expected_complaint\nconst fs = require('fs');\nconst text = fs.readFileSync('/files/testset/test_emails.csv', 'utf8');\nfunction parse(t){const rows=[];let r=[],f='',q=false;for(let i=0;i<t.length;i++){const c=t[i];\n if(q){if(c=='\"'&&t[i+1]=='\"'){f+='\"';i++;}else if(c=='\"')q=false;else f+=c;}\n else if(c=='\"')q=true;else if(c==','){r.push(f);f='';}else if(c=='\\n'){r.push(f);rows.push(r);r=[];f='';}else if(c!='\\r')f+=c;}\n if(f||r.length){r.push(f);rows.push(r);}return rows;}\nconst rows = parse(text).filter(r => r.length > 1);\nconst h = rows.shift();\nreturn rows.map(r => ({ json: Object.fromEntries(h.map((k,i)=>[k.trim(), r[i]])) }));\n"
+      },
+      "id": "21eacf65-1f6c-5457-881b-db2f2ab0fdce",
+      "name": "Load labelled test set",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "b91ba8e1-87a3-5f15-99b7-e789df8645bb",
+      "name": "One at a time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_WITH_WF01_ID"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "1e860ee3-fc69-5798-a355-12d877e224dd",
+      "name": "Run HR-01 triage",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        680,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 8,
+        "unit": "seconds"
+      },
+      "id": "9bd570e6-2d07-59e8-a4f6-de15aa3fe1fa",
+      "name": "Throttle (stay under free-tier RPM)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        80
+      ],
+      "webhookId": "ae66a00e-274e-5068-a9ee-a34b1fe1b4cf"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Scores the run against the labels and writes a results file traceable to the audit log.\nconst fs = require('fs');\nconst items = $input.all().map(i => i.json);\nconst scored = items.filter(r => r.expected_team);\nconst ok = scored.filter(r => r.proposed_team === r.expected_team).length;\nconst autoItems = scored.filter(r => r.status === 'AUTO_ROUTED');\nconst autoOk = autoItems.filter(r => r.proposed_team === r.expected_team).length;\nconst compl = scored.filter(r => String(r.expected_complaint).toLowerCase() === 'yes');\nconst complCaught = compl.filter(r => r.complaint_flag).length;\nconst falseCompl = scored.filter(r => String(r.expected_complaint).toLowerCase() !== 'yes' && r.complaint_flag).length;\nconst byStatus = items.reduce((a,r)=>(a[r.status]=(a[r.status]||0)+1,a),{});\nconst res = {\n  run_at: $now.toISO(), items: items.length, labelled: scored.length,\n  routing_accuracy: scored.length ? +(ok/scored.length).toFixed(3) : null,\n  misroute_rate: scored.length ? +(1-ok/scored.length).toFixed(3) : null,\n  baseline_misroute_rate: 0.30,\n  auto_routed_share: scored.length ? +(autoItems.length/scored.length).toFixed(3) : null,\n  auto_routed_accuracy: autoItems.length ? +(autoOk/autoItems.length).toFixed(3) : null,\n  complaint_recall: compl.length ? +(complCaught/compl.length).toFixed(3) : null,\n  complaints_missed: compl.filter(r=>!r.complaint_flag).map(r=>r.item_id),\n  false_complaint_flags: falseCompl, by_status: byStatus,\n  errors: scored.filter(r => r.proposed_team !== r.expected_team).map(r => ({ item_id: r.item_id, expected: r.expected_team, got: r.proposed_team, status: r.status }))\n};\nfs.mkdirSync('/files/results', { recursive: true });\nfs.writeFileSync('/files/results/test_results_' + $now.toFormat('yyyyMMdd_HHmmss') + '.json', JSON.stringify(res, null, 2));\nreturn [{ json: res }];\n"
+      },
+      "id": "fe2a33bf-48eb-51a9-b9c3-af7d6f353acc",
+      "name": "Score results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        -120
+      ]
+    }
+  ],
+  "connections": {
+    "Run test set": {
+      "main": [
+        [
+          {
+            "node": "Load labelled test set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load labelled test set": {
+      "main": [
+        [
+          {
+            "node": "One at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One at a time": {
+      "main": [
+        [
+          {
+            "node": "Score results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Run HR-01 triage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run HR-01 triage": {
+      "main": [
+        [
+          {
+            "node": "Throttle (stay under free-tier RPM)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Throttle (stay under free-tier RPM)": {
+      "main": [
+        [
+          {
+            "node": "One at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Chicago",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

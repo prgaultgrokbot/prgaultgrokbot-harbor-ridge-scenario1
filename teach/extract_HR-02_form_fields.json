@@ -1,0 +1,84 @@
+{
+  "formTitle": "Harbor Ridge \u2013 Review decision",
+  "formDescription": "Accept, correct or reject the AI routing proposal. Every decision is recorded with your role and time.",
+  "formFields": {
+    "values": [
+      {
+        "fieldLabel": "Item ID",
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "Decision",
+        "fieldType": "dropdown",
+        "fieldOptions": {
+          "values": [
+            {
+              "option": "Accept"
+            },
+            {
+              "option": "Correct"
+            },
+            {
+              "option": "Reject"
+            }
+          ]
+        },
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "Corrected team (only if Correct)",
+        "fieldType": "dropdown",
+        "fieldOptions": {
+          "values": [
+            {
+              "option": "Claims"
+            },
+            {
+              "option": "Billing and Payments"
+            },
+            {
+              "option": "Policy Service"
+            },
+            {
+              "option": "New Business and Underwriting"
+            },
+            {
+              "option": "Agent Services"
+            },
+            {
+              "option": "Complaints Unit"
+            },
+            {
+              "option": "General Inquiries"
+            }
+          ]
+        }
+      },
+      {
+        "fieldLabel": "Is this a complaint?",
+        "fieldType": "dropdown",
+        "fieldOptions": {
+          "values": [
+            {
+              "option": "Yes"
+            },
+            {
+              "option": "No"
+            }
+          ]
+        },
+        "requiredField": true
+      },
+      {
+        "fieldLabel": "Reason",
+        "fieldType": "textarea"
+      },
+      {
+        "fieldLabel": "Reviewer role/initials",
+        "requiredField": true
+      }
+    ]
+  },
+  "responseMode": "lastNode",
+  "options": {}
+}
